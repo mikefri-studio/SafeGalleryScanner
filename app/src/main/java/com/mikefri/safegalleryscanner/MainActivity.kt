@@ -60,43 +60,51 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun downloadFile(url: String, dest: File): Boolean {
+        return try {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.connectTimeout = 15000
+            conn.readTimeout = 120000
+            conn.connect()
+            if (conn.responseCode == 200) {
+                conn.inputStream.use { input -> dest.outputStream().use { output -> input.copyTo(output) } }
+                true
+            } else false
+        } catch (e: Exception) { false }
+    }
+
     private fun ensureDetector(): PhotoDetector {
-        val f = File(filesDir, "nsfw.onnx")
+        val modelF = File(filesDir, "nsfw_v2.onnx")
+        val cfgF = File(filesDir, "cfg_v2.json")
+        val preF = File(filesDir, "pre_v2.json")
         try {
-            if (!f.exists()) {
-                try {
-                    assets.open("nsfw.onnx").use { input ->
-                        f.outputStream().use { output -> input.copyTo(output) }
+            if (!modelF.exists()) {
+                runOnUiThread { tvStatus.text = "Telechargement du modele IA v2 (une seule fois)..." }
+                val repos = listOf(
+                    "https://huggingface.co/AdamCodd/vit-base-nsfw-detector",
+                    "https://huggingface.co/Falconsai/nsfw_image_detection"
+                )
+                for (base in repos) {
+                    val modelUrls = listOf("$base/resolve/main/onnx/model.onnx", "$base/resolve/main/model.onnx")
+                    var ok = false
+                    for (u in modelUrls) {
+                        if (downloadFile(u, modelF) && modelF.length() > 5_000_000) { ok = true; break }
                     }
-                } catch (e: Exception) { }
+                    if (ok) {
+                        downloadFile("$base/resolve/main/config.json", cfgF)
+                        downloadFile("$base/resolve/main/preprocessor_config.json", preF)
+                        break
+                    } else {
+                        modelF.delete()
+                    }
+                }
             }
-            if (!f.exists()) {
-                runOnUiThread { tvStatus.text = "Telechargement du modele IA (~90 Mo, une seule fois)..." }
-                downloadModel(f)
+            if (modelF.exists() && modelF.length() > 5_000_000) {
+                return OnnxDetector(modelF.absolutePath, cfgF.absolutePath, preF.absolutePath)
             }
-            if (f.exists() && f.length() > 5_000_000) return OnnxDetector(f.absolutePath)
         } catch (e: Exception) { }
         runOnUiThread { tvStatus.text = "Modele IA indisponible : retour detecteur v1" }
         return SkinDetector()
-    }
-
-    private fun downloadModel(dest: File) {
-        val urls = listOf(
-            "https://huggingface.co/Falconsai/nsfw_image_detection/resolve/main/onnx/model.onnx",
-            "https://huggingface.co/Falconsai/nsfw_image_detection/resolve/main/model.onnx"
-        )
-        for (u in urls) {
-            try {
-                val conn = URL(u).openConnection() as HttpURLConnection
-                conn.connectTimeout = 15000
-                conn.readTimeout = 120000
-                conn.connect()
-                if (conn.responseCode == 200) {
-                    conn.inputStream.use { input -> dest.outputStream().use { output -> input.copyTo(output) } }
-                    if (dest.length() > 5_000_000) return
-                }
-            } catch (e: Exception) { }
-        }
     }
 
     private fun scanGallery() {
