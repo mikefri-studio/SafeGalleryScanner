@@ -1,36 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorPrimary"
+        app:title="SafeGallery Scanner"
+        app:titleTextColor="#FFFFFF" />
 
     <TextView
         android:id="@+id/tvStatus"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        android:text="Appuie sur le bouton pour scanner la galerie"
-        android:textSize="18sp" />
+        android:padding="16dp"
+        android:text="Appuie sur Scanner pour analyser la galerie"
+        android:textSize="16sp"
+        android:textStyle="bold" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnScan"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Scanner mes photos" />
+            android:layout_marginEnd="8dp"
+            android:text="Scanner"
+            app:icon="@drawable/ic_search" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnVault"
+            style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Coffre-fort" />
+            android:layout_marginStart="8dp"
+            android:text="Coffre-fort"
+            app:icon="@drawable/ic_lock" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
@@ -38,5 +54,6 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="16dp" />
+        android:padding="8dp"
+        android:clipToPadding="false" />
 </LinearLayout>

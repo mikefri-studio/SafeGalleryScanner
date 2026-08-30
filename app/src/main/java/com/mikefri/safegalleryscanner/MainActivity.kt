@@ -1,6 +1,7 @@
 package com.mikefri.safegalleryscanner
 
 import android.Manifest
+import android.content.Intent
 import android.content.ContentUris
 import android.content.pm.PackageManager
 import android.net.Uri

@@ -1,17 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#000000">
+    android:background="#121212">
 
     <TextView
         android:id="@+id/tvScore"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="12dp"
+        android:background="#1F1F1F"
+        android:padding="14dp"
         android:textColor="#FFFFFF"
         android:textSize="16sp"
+        android:textStyle="bold"
         android:text="Score NSFW : -" />
 
     <ImageView
@@ -25,27 +28,38 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:background="#1F1F1F"
+        android:padding="8dp">
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnKeep"
+            style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Conserver" />
+            android:layout_margin="4dp"
+            android:text="Garder"
+            app:icon="@drawable/ic_restore" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnVault"
+            style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Coffre" />
+            android:layout_margin="4dp"
+            android:text="Coffre"
+            app:icon="@drawable/ic_lock" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnDelete"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Supprimer" />
+            android:layout_margin="4dp"
+            android:text="Supprimer"
+            app:backgroundTint="#C62828"
+            app:icon="@drawable/ic_delete" />
     </LinearLayout>
 </LinearLayout>
