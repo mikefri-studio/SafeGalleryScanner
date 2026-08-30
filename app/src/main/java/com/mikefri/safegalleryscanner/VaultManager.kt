@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import java.io.File
 
 object VaultManager {
@@ -19,11 +20,27 @@ object VaultManager {
     fun saveToVault(context: Context, uri: Uri): File? {
         return try {
             val dest = File(vaultDir(context), "vault_" + System.currentTimeMillis() + ".jpg")
-            context.contentResolver.openInputStream(uri).use { input ->
-                dest.outputStream().use { output -> input?.copyTo(output) }
+            Log.i("VAULT", "Copie vers: " + dest.absolutePath)
+            
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                dest.outputStream().use { output ->
+                    val bytes = input.copyTo(output)
+                    Log.i("VAULT", "Bytes copies: " + bytes)
+                }
             }
-            dest
-        } catch (e: Exception) { null }
+            
+            if (dest.exists() && dest.length() > 1000) {
+                Log.i("VAULT", "Succes, taille: " + dest.length())
+                dest
+            } else {
+                Log.e("VAULT", "Echec: fichier trop petit ou inexistant")
+                dest.delete()
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("VAULT", "Exception: " + e.message)
+            null
+        }
     }
 
     fun listVault(context: Context): List<File> {

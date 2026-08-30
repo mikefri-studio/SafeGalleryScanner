@@ -17,7 +17,9 @@ class ImageAdapter(
 ) : RecyclerView.Adapter<ImageAdapter.VH>() {
 
     var scores: FloatArray = FloatArray(0)
+    var selected: Set<Int> = emptySet()
     var onClick: ((Int) -> Unit)? = null
+    var onLongClick: ((Int) -> Unit)? = null
 
     companion object {
         private val pool = Executors.newFixedThreadPool(4)
@@ -39,16 +41,33 @@ class ImageAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val uri = uris[position]
 
-        if (scores.size == uris.size && scores[position] >= NSFW_THRESHOLD) {
-            holder.card.strokeColor = Color.RED
-            holder.card.strokeWidth = (4 * context.resources.displayMetrics.density).toInt()
-        } else {
-            holder.card.strokeWidth = 0
+        when {
+            position in selected -> {
+                // Mode selection : bordure bleue epaisse
+                holder.card.strokeColor = Color.parseColor("#1976D2")
+                holder.card.strokeWidth = (6 * context.resources.displayMetrics.density).toInt()
+                holder.img.alpha = 0.7f
+            }
+            scores.size == uris.size && scores[position] >= NSFW_THRESHOLD -> {
+                // Suspecte : bordure rouge fine
+                holder.card.strokeColor = Color.RED
+                holder.card.strokeWidth = (4 * context.resources.displayMetrics.density).toInt()
+                holder.img.alpha = 1f
+            }
+            else -> {
+                holder.card.strokeWidth = 0
+                holder.img.alpha = 1f
+            }
         }
 
         holder.card.setOnClickListener {
             val pos = holder.bindingAdapterPosition
             if (pos != RecyclerView.NO_POSITION) onClick?.invoke(pos)
+        }
+        holder.card.setOnLongClickListener {
+            val pos = holder.bindingAdapterPosition
+            if (pos != RecyclerView.NO_POSITION) onLongClick?.invoke(pos)
+            true
         }
 
         holder.img.tag = uri

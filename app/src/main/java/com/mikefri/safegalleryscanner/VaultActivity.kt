@@ -153,7 +153,7 @@ class VaultActivity : AppCompatActivity() {
 
     inner class VaultAdapter(private val files: List<File>) : RecyclerView.Adapter<VaultAdapter.VH>() {
         inner class VH(view: View) : RecyclerView.ViewHolder(view) {
-            val img: ImageView = view as ImageView
+            val img: ImageView = view.findViewById(R.id.imgThumb)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {

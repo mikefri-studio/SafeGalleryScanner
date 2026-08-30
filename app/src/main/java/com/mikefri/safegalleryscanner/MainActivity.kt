@@ -1,14 +1,18 @@
 package com.mikefri.safegalleryscanner
 
 import android.Manifest
-import android.content.Intent
+import android.app.AlertDialog
 import android.content.ContentUris
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.util.Log
+import android.view.View
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -25,17 +29,30 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : AppCompatActivity() {
 
+    private val REQUEST_DETAIL = 78
+    private val REQUEST_DELETE_QUICK = 89
+    private val REQUEST_DELETE_MULTI = 90
     private lateinit var tvStatus: TextView
     private lateinit var adapter: ImageAdapter
+    private lateinit var barSelection: LinearLayout
+    private lateinit var tvSelCount: TextView
     private val imageUris = mutableListOf<Uri>()
     private val imageKeys = mutableListOf<String>()
+    private var scores = FloatArray(0)
     private var modelInfo = "v1-peau"
+    private var pendingQuickVault: File? = null
+    private var pendingQuickVaultIndex = -1
+    private var pendingMultiCopies = mutableListOf<File>()
+    private var pendingMultiIndices = mutableListOf<Int>()
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
-        if (grants.all { it.value }) scanGallery()
-        else tvStatus.text = "Permission refusee. Impossible de scanner la galerie."
+        if (grants.all { it.value }) {
+            loadPhotos()
+        } else {
+            tvStatus.text = "Permission refusee. Impossible de charger la galerie."
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,25 +60,293 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         tvStatus = findViewById(R.id.tvStatus)
-        findViewById<Button>(R.id.btnScan).setOnClickListener { askPermission() }
+        barSelection = findViewById(R.id.barSelection)
+        tvSelCount = findViewById(R.id.tvSelCount)
+
+        findViewById<Button>(R.id.btnScan).setOnClickListener { askPermissionForScan() }
         findViewById<Button>(R.id.btnVault).setOnClickListener { startActivity(Intent(this, VaultActivity::class.java)) }
+        findViewById<Button>(R.id.btnCancelSel).setOnClickListener { exitSelectionMode() }
+        findViewById<Button>(R.id.btnVaultMulti).setOnClickListener { vaultSelection() }
 
         val recycler = findViewById<RecyclerView>(R.id.recyclerImages)
         recycler.layoutManager = GridLayoutManager(this, 3)
         adapter = ImageAdapter(this, imageUris)
         recycler.adapter = adapter
+
+        adapter.onClick = { pos ->
+            if (pos in imageUris.indices) {
+                if (adapter.selected.isNotEmpty()) {
+                    toggleSelection(pos)
+                } else if (scores.size == imageUris.size && scores[pos] >= NSFW_THRESHOLD) {
+                    val intent = Intent(this, DetailActivity::class.java)
+                    intent.putExtra("uri", imageUris[pos].toString())
+                    intent.putExtra("score", scores[pos])
+                    startActivityForResult(intent, REQUEST_DETAIL)
+                } else {
+                    showQuickVaultDialog(pos)
+                }
+            }
+        }
+
+        adapter.onLongClick = { pos ->
+            if (adapter.selected.isEmpty()) enterSelectionMode(pos)
+            else toggleSelection(pos)
+        }
+
+        askPermissionForLoad()
+    }
+
+    private fun enterSelectionMode(pos: Int) {
+        adapter.selected = setOf(pos)
+        adapter.notifyItemChanged(pos)
+        updateSelectionBar()
+        barSelection.visibility = View.VISIBLE
+    }
+
+    private fun toggleSelection(pos: Int) {
+        val newSel = adapter.selected.toMutableSet()
+        if (pos in newSel) newSel.remove(pos) else newSel.add(pos)
+        adapter.selected = newSel
+        adapter.notifyItemChanged(pos)
+        if (newSel.isEmpty()) exitSelectionMode()
+        else updateSelectionBar()
+    }
+
+    private fun exitSelectionMode() {
+        val old = adapter.selected
+        adapter.selected = emptySet()
+        old.forEach { adapter.notifyItemChanged(it) }
+        barSelection.visibility = View.GONE
+    }
+
+    private fun updateSelectionBar() {
+        tvSelCount.text = "${adapter.selected.size} selectionnee(s)"
+    }
+
+    private fun vaultSelection() {
+        val positions = adapter.selected.sorted()
+        if (positions.isEmpty()) return
+
+        AlertDialog.Builder(this)
+            .setTitle("Mettre au coffre ?")
+            .setMessage("${positions.size} photo(s) vont etre cachees dans le coffre et retirees de la galerie.")
+            .setPositiveButton("Oui") { _, _ -> doVaultMulti(positions) }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    private fun doVaultMulti(positions: List<Int>) {
+        pendingMultiCopies.clear()
+        pendingMultiIndices.clear()
+        val deleteTargets = mutableListOf<Uri>()
+
+        for (pos in positions) {
+            if (pos !in imageUris.indices) continue
+            val uri = imageUris[pos]
+            val f = VaultManager.saveToVault(this, uri)
+            if (f != null) {
+                pendingMultiCopies.add(f)
+                pendingMultiIndices.add(pos)
+                deleteTargets.add(uri)
+            }
+        }
+
+        if (deleteTargets.isEmpty()) {
+            exitSelectionMode()
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                val pending = MediaStore.createDeleteRequest(contentResolver, deleteTargets)
+                startIntentSenderForResult(pending.intentSender, REQUEST_DELETE_MULTI, null, 0, 0, 0)
+                return
+            } catch (e: Exception) {
+                Log.e("MAIN", "createDeleteRequest: " + e.message)
+            }
+        }
+        // Fallback Android < 11 : suppression une par une
+        for (u in deleteTargets) {
+            try { contentResolver.delete(u, null, null) } catch (e: Exception) { }
+        }
+        finishMultiVault(true)
+    }
+
+    private fun rollbackMultiVault() {
+        pendingMultiCopies.forEach { it.delete() }
+        pendingMultiCopies.clear()
+        pendingMultiIndices.clear()
+    }
+
+    private fun finishMultiVault(deleted: Boolean) {
+        if (!deleted) {
+            rollbackMultiVault()
+            exitSelectionMode()
+            return
+        }
+        // Retirer de la liste (du plus grand index au plus petit pour ne pas decaler)
+        val sorted = pendingMultiIndices.sortedDescending()
+        for (idx in sorted) {
+            if (idx in imageUris.indices) {
+                imageUris.removeAt(idx)
+                imageKeys.removeAt(idx)
+                if (scores.size > idx) {
+                    scores = scores.filterIndexed { i, _ -> i != idx }.toFloatArray()
+                }
+            }
+        }
+        pendingMultiCopies.clear()
+        pendingMultiIndices.clear()
+        adapter.scores = scores
+        adapter.selected = emptySet()
+        adapter.notifyDataSetChanged()
+        barSelection.visibility = View.GONE
+        updateStatus()
     }
 
     private fun requiredPermissions(): Array<String> =
         if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
         else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
 
-    private fun askPermission() {
+    private fun askPermissionForLoad() {
+        val perms = requiredPermissions()
+        if (perms.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
+            loadPhotos()
+        } else {
+            permissionLauncher.launch(perms)
+        }
+    }
+
+    private fun askPermissionForScan() {
         val perms = requiredPermissions()
         if (perms.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
             scanGallery()
         } else {
             permissionLauncher.launch(perms)
+        }
+    }
+
+    private fun loadPhotos() {
+        tvStatus.text = "Chargement de la galerie..."
+
+        Thread {
+            imageUris.clear()
+            imageKeys.clear()
+            scores = FloatArray(0)
+            val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            val projection = arrayOf(
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.DATE_MODIFIED
+            )
+
+            contentResolver.query(
+                collection,
+                projection,
+                null,
+                null,
+                MediaStore.Images.Media.DATE_MODIFIED + " DESC"
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idColumn)
+                    val dm = cursor.getLong(dateColumn)
+                    imageUris.add(ContentUris.withAppendedId(collection, id))
+                    imageKeys.add(id.toString() + "|" + dm.toString())
+                }
+            }
+
+            runOnUiThread {
+                adapter.scores = FloatArray(0)
+                adapter.selected = emptySet()
+                adapter.notifyDataSetChanged()
+                tvStatus.text = "Photos : ${imageUris.size} | Appui long pour selection multiple"
+            }
+        }.start()
+    }
+
+    private fun showQuickVaultDialog(pos: Int) {
+        AlertDialog.Builder(this)
+            .setTitle("Mettre au coffre-fort ?")
+            .setMessage("Cette photo sera cachee dans le coffre et retiree de la galerie.")
+            .setPositiveButton("Oui, mettre au coffre") { _, _ -> quickVault(pos) }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    private fun quickVault(pos: Int) {
+        val uri = imageUris[pos]
+        val f = VaultManager.saveToVault(this, uri)
+        if (f == null) return
+        pendingQuickVault = f
+        pendingQuickVaultIndex = pos
+
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                val pending = MediaStore.createDeleteRequest(contentResolver, listOf(uri))
+                startIntentSenderForResult(pending.intentSender, REQUEST_DELETE_QUICK, null, 0, 0, 0)
+            } catch (e: Exception) {
+                rollbackQuickVault()
+            }
+        } else {
+            try {
+                contentResolver.delete(uri, null, null)
+                finishQuickVault(true)
+            } catch (e: Exception) {
+                rollbackQuickVault()
+            }
+        }
+    }
+
+    private fun rollbackQuickVault() {
+        pendingQuickVault?.delete()
+        pendingQuickVault = null
+        pendingQuickVaultIndex = -1
+    }
+
+    private fun finishQuickVault(deleted: Boolean) {
+        if (!deleted) {
+            rollbackQuickVault()
+        } else if (pendingQuickVaultIndex >= 0 && pendingQuickVaultIndex < imageUris.size) {
+            imageUris.removeAt(pendingQuickVaultIndex)
+            imageKeys.removeAt(pendingQuickVaultIndex)
+            if (scores.size == imageUris.size + 1) {
+                scores = scores.filterIndexed { i, _ -> i != pendingQuickVaultIndex }.toFloatArray()
+            }
+            adapter.scores = scores
+            adapter.notifyDataSetChanged()
+            updateStatus()
+        }
+        pendingQuickVault = null
+        pendingQuickVaultIndex = -1
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_DETAIL && resultCode == RESULT_OK && data != null) {
+            val uriStr = data.getStringExtra("uri") ?: return
+            val deleted = data.getBooleanExtra("deleted", false)
+            val keep = data.getBooleanExtra("keep", false)
+            val idx = imageUris.indexOfFirst { it.toString() == uriStr }
+            if (idx < 0) return
+            if (keep) {
+                scores[idx] = 0f
+                try { cacheFile().appendText(imageKeys[idx] + "\t0.0\n") } catch (e: Exception) { }
+                adapter.scores = scores
+                adapter.notifyItemChanged(idx)
+                updateStatus()
+            } else if (deleted) {
+                imageUris.removeAt(idx)
+                imageKeys.removeAt(idx)
+                scores = scores.filterIndexed { i, _ -> i != idx }.toFloatArray()
+                adapter.scores = scores
+                adapter.notifyDataSetChanged()
+                updateStatus()
+            }
+        } else if (requestCode == REQUEST_DELETE_QUICK) {
+            finishQuickVault(resultCode == RESULT_OK)
+        } else if (requestCode == REQUEST_DELETE_MULTI) {
+            finishMultiVault(resultCode == RESULT_OK)
         }
     }
 
@@ -117,35 +402,19 @@ class MainActivity : AppCompatActivity() {
         return SkinDetector()
     }
 
+    private fun updateStatus() {
+        val flagged = scores.count { it >= NSFW_THRESHOLD }
+        if (scores.isEmpty()) {
+            tvStatus.text = "Photos : ${imageUris.size} | Appui long pour selection multiple"
+        } else {
+            tvStatus.text = "Photos : ${imageUris.size} | Suspectes : $flagged | modele : $modelInfo"
+        }
+    }
+
     private fun scanGallery() {
         tvStatus.text = "Scan en cours..."
 
         Thread {
-            imageUris.clear()
-            imageKeys.clear()
-            val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            val projection = arrayOf(
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DATE_MODIFIED
-            )
-
-            contentResolver.query(
-                collection,
-                projection,
-                null,
-                null,
-                MediaStore.Images.Media.DATE_MODIFIED + " DESC"
-            )?.use { cursor ->
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idColumn)
-                    val dm = cursor.getLong(dateColumn)
-                    imageUris.add(ContentUris.withAppendedId(collection, id))
-                    imageKeys.add(id.toString() + "|" + dm.toString())
-                }
-            }
-
             val detector = ensureDetector()
 
             val cache = ConcurrentHashMap<String, Float>()
@@ -158,7 +427,7 @@ class MainActivity : AppCompatActivity() {
 
             runOnUiThread { tvStatus.text = "Analyse IA en cours... 0/${imageUris.size}" }
 
-            val scores = FloatArray(imageUris.size)
+            scores = FloatArray(imageUris.size)
             val skin = SkinDetector()
             val pool = Executors.newFixedThreadPool(4)
             val latch = CountDownLatch(imageUris.size)
@@ -202,14 +471,10 @@ class MainActivity : AppCompatActivity() {
                 cacheFile().writeText(sb.toString())
             } catch (e: Exception) { }
 
-            val flagged = scores.count { it >= NSFW_THRESHOLD }
-            val maxScore = if (scores.isEmpty()) 0f else scores.max()
-
             runOnUiThread {
                 adapter.scores = scores
                 adapter.notifyDataSetChanged()
-                tvStatus.text = "Photos : ${imageUris.size} | Suspectes : $flagged | max : " +
-                    "%.2f".format(maxScore) + " | modele : $modelInfo"
+                updateStatus()
             }
         }.start()
     }
