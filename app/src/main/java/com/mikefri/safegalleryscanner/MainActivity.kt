@@ -14,6 +14,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : AppCompatActivity() {
 
@@ -76,9 +79,38 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            runOnUiThread { tvStatus.text = "Analyse en cours... 0/${imageUris.size}" }
+
+            val detector = SkinDetector()
+            val scores = FloatArray(imageUris.size)
+            val pool = Executors.newFixedThreadPool(4)
+            val latch = CountDownLatch(imageUris.size)
+            val done = AtomicInteger(0)
+
+            imageUris.forEachIndexed { i, uri ->
+                pool.execute {
+                    try {
+                        val bmp = decodeSampled(this, uri, 96)
+                        scores[i] = if (bmp != null) detector.score(bmp) else 0f
+                    } catch (e: Exception) {
+                        scores[i] = 0f
+                    }
+                    val d = done.incrementAndGet()
+                    if (d % 100 == 0) {
+                        runOnUiThread { tvStatus.text = "Analyse en cours... $d/${imageUris.size}" }
+                    }
+                    latch.countDown()
+                }
+            }
+            latch.await()
+            pool.shutdown()
+
+            val flagged = scores.count { it >= NSFW_THRESHOLD }
+
             runOnUiThread {
-                tvStatus.text = "Photos trouvees : ${imageUris.size}"
+                adapter.scores = scores
                 adapter.notifyDataSetChanged()
+                tvStatus.text = "Photos : ${imageUris.size} | Suspectes : $flagged"
             }
         }.start()
     }

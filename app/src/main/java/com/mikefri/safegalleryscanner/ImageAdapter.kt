@@ -1,8 +1,7 @@
 package com.mikefri.safegalleryscanner
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.net.Uri
 import android.view.LayoutInflater
 import android.view.View
@@ -15,6 +14,8 @@ class ImageAdapter(
     private val context: Context,
     private val uris: List<Uri>
 ) : RecyclerView.Adapter<ImageAdapter.VH>() {
+
+    var scores: FloatArray = FloatArray(0)
 
     companion object {
         private val pool = Executors.newFixedThreadPool(4)
@@ -34,32 +35,22 @@ class ImageAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val uri = uris[position]
+
+        if (scores.size == uris.size && scores[position] >= NSFW_THRESHOLD) {
+            holder.img.setBackgroundColor(Color.RED)
+            holder.img.setPadding(6, 6, 6, 6)
+        } else {
+            holder.img.setBackgroundColor(Color.TRANSPARENT)
+            holder.img.setPadding(0, 0, 0, 0)
+        }
+
         holder.img.tag = uri
         holder.img.setImageBitmap(null)
         pool.execute {
-            val bmp = decodeSampled(uri, 200)
+            val bmp = decodeSampled(context, uri, 200)
             holder.img.post {
                 if (holder.img.tag == uri) holder.img.setImageBitmap(bmp)
             }
-        }
-    }
-
-    private fun decodeSampled(uri: Uri, req: Int): Bitmap? {
-        return try {
-            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            context.contentResolver.openInputStream(uri)?.use {
-                BitmapFactory.decodeStream(it, null, opts)
-            }
-            var sample = 1
-            while (opts.outWidth / (sample * 2) >= req && opts.outHeight / (sample * 2) >= req) {
-                sample *= 2
-            }
-            val opts2 = BitmapFactory.Options().apply { inSampleSize = sample }
-            context.contentResolver.openInputStream(uri)?.use {
-                BitmapFactory.decodeStream(it, null, opts2)
-            }
-        } catch (e: Exception) {
-            null
         }
     }
 }
