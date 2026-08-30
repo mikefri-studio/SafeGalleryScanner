@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.RecyclerView
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -26,6 +27,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var adapter: ImageAdapter
     private val imageUris = mutableListOf<Uri>()
+    private val imageKeys = mutableListOf<String>()
+    private var modelInfo = "v1-peau"
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -60,6 +63,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun cacheFile() = File(filesDir, "scores_cache_v3.txt")
+
     private fun downloadFile(url: String, dest: File): Boolean {
         return try {
             val conn = URL(url).openConnection() as HttpURLConnection
@@ -91,6 +96,7 @@ class MainActivity : AppCompatActivity() {
                         if (downloadFile(u, modelF) && modelF.length() > 5_000_000) { ok = true; break }
                     }
                     if (ok) {
+                        modelInfo = if (base.contains("AdamCodd")) "AdamCodd" else "Falconsai"
                         downloadFile("$base/resolve/main/config.json", cfgF)
                         downloadFile("$base/resolve/main/preprocessor_config.json", preF)
                         break
@@ -98,12 +104,14 @@ class MainActivity : AppCompatActivity() {
                         modelF.delete()
                     }
                 }
+            } else {
+                modelInfo = "AdamCodd-cache"
             }
             if (modelF.exists() && modelF.length() > 5_000_000) {
                 return OnnxDetector(modelF.absolutePath, cfgF.absolutePath, preF.absolutePath)
             }
         } catch (e: Exception) { }
-        runOnUiThread { tvStatus.text = "Modele IA indisponible : retour detecteur v1" }
+        modelInfo = "v1-peau"
         return SkinDetector()
     }
 
@@ -112,8 +120,12 @@ class MainActivity : AppCompatActivity() {
 
         Thread {
             imageUris.clear()
+            imageKeys.clear()
             val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            val projection = arrayOf(MediaStore.Images.Media._ID)
+            val projection = arrayOf(
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.DATE_MODIFIED
+            )
 
             contentResolver.query(
                 collection,
@@ -123,17 +135,29 @@ class MainActivity : AppCompatActivity() {
                 MediaStore.Images.Media.DATE_MODIFIED + " DESC"
             )?.use { cursor ->
                 val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idColumn)
+                    val dm = cursor.getLong(dateColumn)
                     imageUris.add(ContentUris.withAppendedId(collection, id))
+                    imageKeys.add(id.toString() + "|" + dm.toString())
                 }
             }
 
             val detector = ensureDetector()
 
+            val cache = ConcurrentHashMap<String, Float>()
+            try {
+                cacheFile().readLines().forEach { line ->
+                    val parts = line.split('\t')
+                    if (parts.size == 2) cache[parts[0]] = parts[1].toFloatOrNull() ?: 0f
+                }
+            } catch (e: Exception) { }
+
             runOnUiThread { tvStatus.text = "Analyse IA en cours... 0/${imageUris.size}" }
 
             val scores = FloatArray(imageUris.size)
+            val skin = SkinDetector()
             val pool = Executors.newFixedThreadPool(4)
             val latch = CountDownLatch(imageUris.size)
             val done = AtomicInteger(0)
@@ -141,13 +165,25 @@ class MainActivity : AppCompatActivity() {
             imageUris.forEachIndexed { i, uri ->
                 pool.execute {
                     try {
-                        val bmp = decodeSampled(this, uri, 256)
-                        scores[i] = if (bmp != null) detector.score(bmp) else 0f
+                        val key = imageKeys[i]
+                        val cached = cache[key]
+                        if (cached != null) {
+                            scores[i] = cached
+                        } else {
+                            val bmp = decodeSampled(this, uri, 384)
+                            var sc = 0f
+                            if (bmp != null) {
+                                if (skin.score(bmp) >= 0.3f) sc = detector.score(bmp)
+                                bmp.recycle()
+                            }
+                            scores[i] = sc
+                            cache[key] = sc
+                        }
                     } catch (e: Exception) {
                         scores[i] = 0f
                     }
                     val d = done.incrementAndGet()
-                    if (d % 50 == 0) {
+                    if (d % 25 == 0) {
                         runOnUiThread { tvStatus.text = "Analyse IA en cours... $d/${imageUris.size}" }
                     }
                     latch.countDown()
@@ -156,12 +192,22 @@ class MainActivity : AppCompatActivity() {
             latch.await()
             pool.shutdown()
 
+            try {
+                val sb = StringBuilder()
+                for (i in imageKeys.indices) {
+                    sb.append(imageKeys[i]).append('\t').append(scores[i]).append('\n')
+                }
+                cacheFile().writeText(sb.toString())
+            } catch (e: Exception) { }
+
             val flagged = scores.count { it >= NSFW_THRESHOLD }
+            val maxScore = if (scores.isEmpty()) 0f else scores.max()
 
             runOnUiThread {
                 adapter.scores = scores
                 adapter.notifyDataSetChanged()
-                tvStatus.text = "Photos : ${imageUris.size} | Suspectes : $flagged"
+                tvStatus.text = "Photos : ${imageUris.size} | Suspectes : $flagged | max : " +
+                    "%.2f".format(maxScore) + " | modele : $modelInfo"
             }
         }.start()
     }
