@@ -5,8 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 
-const val NSFW_THRESHOLD = 0.5f
-const val NSFW_INDEX = 0
+const val NSFW_THRESHOLD = 0.7f
+const val NSFW_INDEX = 1   // 1 = "nsfw" dans l'ordre [normal, nsfw] du modele Falcons
 
 fun decodeSampled(context: Context, uri: Uri, req: Int): Bitmap? {
     return try {
