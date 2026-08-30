@@ -5,7 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 
-const val NSFW_THRESHOLD = 0.45f
+const val NSFW_THRESHOLD = 0.5f
+const val NSFW_INDEX = 0
 
 fun decodeSampled(context: Context, uri: Uri, req: Int): Bitmap? {
     return try {

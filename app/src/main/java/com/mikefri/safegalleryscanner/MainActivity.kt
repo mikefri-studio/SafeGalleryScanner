@@ -14,6 +14,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -57,6 +60,45 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun ensureDetector(): PhotoDetector {
+        val f = File(filesDir, "nsfw.onnx")
+        try {
+            if (!f.exists()) {
+                try {
+                    assets.open("nsfw.onnx").use { input ->
+                        f.outputStream().use { output -> input.copyTo(output) }
+                    }
+                } catch (e: Exception) { }
+            }
+            if (!f.exists()) {
+                runOnUiThread { tvStatus.text = "Telechargement du modele IA (~90 Mo, une seule fois)..." }
+                downloadModel(f)
+            }
+            if (f.exists() && f.length() > 5_000_000) return OnnxDetector(f.absolutePath)
+        } catch (e: Exception) { }
+        runOnUiThread { tvStatus.text = "Modele IA indisponible : retour detecteur v1" }
+        return SkinDetector()
+    }
+
+    private fun downloadModel(dest: File) {
+        val urls = listOf(
+            "https://huggingface.co/Falconsai/nsfw_image_detection/resolve/main/onnx/model.onnx",
+            "https://huggingface.co/Falconsai/nsfw_image_detection/resolve/main/model.onnx"
+        )
+        for (u in urls) {
+            try {
+                val conn = URL(u).openConnection() as HttpURLConnection
+                conn.connectTimeout = 15000
+                conn.readTimeout = 120000
+                conn.connect()
+                if (conn.responseCode == 200) {
+                    conn.inputStream.use { input -> dest.outputStream().use { output -> input.copyTo(output) } }
+                    if (dest.length() > 5_000_000) return
+                }
+            } catch (e: Exception) { }
+        }
+    }
+
     private fun scanGallery() {
         tvStatus.text = "Scan en cours..."
 
@@ -79,9 +121,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            runOnUiThread { tvStatus.text = "Analyse en cours... 0/${imageUris.size}" }
+            val detector = ensureDetector()
 
-            val detector = SkinDetector()
+            runOnUiThread { tvStatus.text = "Analyse IA en cours... 0/${imageUris.size}" }
+
             val scores = FloatArray(imageUris.size)
             val pool = Executors.newFixedThreadPool(4)
             val latch = CountDownLatch(imageUris.size)
@@ -90,14 +133,14 @@ class MainActivity : AppCompatActivity() {
             imageUris.forEachIndexed { i, uri ->
                 pool.execute {
                     try {
-                        val bmp = decodeSampled(this, uri, 96)
+                        val bmp = decodeSampled(this, uri, 256)
                         scores[i] = if (bmp != null) detector.score(bmp) else 0f
                     } catch (e: Exception) {
                         scores[i] = 0f
                     }
                     val d = done.incrementAndGet()
-                    if (d % 100 == 0) {
-                        runOnUiThread { tvStatus.text = "Analyse en cours... $d/${imageUris.size}" }
+                    if (d % 50 == 0) {
+                        runOnUiThread { tvStatus.text = "Analyse IA en cours... $d/${imageUris.size}" }
                     }
                     latch.countDown()
                 }

@@ -35,6 +35,7 @@ dependencies {
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.appcompat)
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.16.3")
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
