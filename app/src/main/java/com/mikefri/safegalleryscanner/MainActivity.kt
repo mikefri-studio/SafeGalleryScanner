@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
 
         tvStatus = findViewById(R.id.tvStatus)
         findViewById<Button>(R.id.btnScan).setOnClickListener { askPermission() }
+        findViewById<Button>(R.id.btnVault).setOnClickListener { startActivity(Intent(this, VaultActivity::class.java)) }
 
         val recycler = findViewById<RecyclerView>(R.id.recyclerImages)
         recycler.layoutManager = GridLayoutManager(this, 3)

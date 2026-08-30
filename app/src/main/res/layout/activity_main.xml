@@ -13,11 +13,25 @@
         android:text="Appuie sur le bouton pour scanner la galerie"
         android:textSize="18sp" />
 
-    <Button
-        android:id="@+id/btnScan"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Scanner mes photos" />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnScan"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Scanner mes photos" />
+
+        <Button
+            android:id="@+id/btnVault"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Coffre-fort" />
+    </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerImages"
