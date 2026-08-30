@@ -12,20 +12,20 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
+    private lateinit var adapter: ImageAdapter
     private val imageUris = mutableListOf<Uri>()
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
-        if (grants.all { it.value }) {
-            scanGallery()
-        } else {
-            tvStatus.text = "Permission refusée. Impossible de scanner la galerie."
-        }
+        if (grants.all { it.value }) scanGallery()
+        else tvStatus.text = "Permission refusee. Impossible de scanner la galerie."
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,6 +34,11 @@ class MainActivity : AppCompatActivity() {
 
         tvStatus = findViewById(R.id.tvStatus)
         findViewById<Button>(R.id.btnScan).setOnClickListener { askPermission() }
+
+        val recycler = findViewById<RecyclerView>(R.id.recyclerImages)
+        recycler.layoutManager = GridLayoutManager(this, 3)
+        adapter = ImageAdapter(this, imageUris)
+        recycler.adapter = adapter
     }
 
     private fun requiredPermissions(): Array<String> =
@@ -72,7 +77,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             runOnUiThread {
-                tvStatus.text = "Photos trouvées : ${imageUris.size}"
+                tvStatus.text = "Photos trouvees : ${imageUris.size}"
+                adapter.notifyDataSetChanged()
             }
         }.start()
     }
