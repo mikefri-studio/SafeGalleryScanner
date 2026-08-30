@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.util.Log
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
@@ -20,12 +21,14 @@ class DetailActivity : AppCompatActivity() {
     private val REQUEST_DELETE = 77
     private val REQUEST_WRITE = 79
     private lateinit var uri: Uri
+    private lateinit var overlay: BoxOverlayView
     private var score = 0f
     private var pendingVault: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_detail)
+        applySystemInsets(this)
 
         val uriStr = intent.getStringExtra("uri") ?: ""
         if (uriStr.isEmpty()) { finish(); return }
@@ -33,11 +36,21 @@ class DetailActivity : AppCompatActivity() {
         score = intent.getFloatExtra("score", 0f)
 
         findViewById<TextView>(R.id.tvScore).text = "Score NSFW : %.2f".format(score)
+        overlay = findViewById(R.id.boxOverlay)
 
         val img = findViewById<ImageView>(R.id.imgFull)
         Thread {
             val bmp = decodeSampled(this, uri, 1024)
-            img.post { img.setImageBitmap(bmp) }
+            val dets = if (bmp != null) NudeNetProvider.detect(this, bmp) else emptyList()
+            Log.i("NUDE", "detections: " + dets.size)
+            img.post {
+                img.setImageBitmap(bmp)
+                if (bmp != null) {
+                    overlay.imageWidth = bmp.width
+                    overlay.imageHeight = bmp.height
+                }
+                overlay.detections = dets
+            }
         }.start()
 
         findViewById<Button>(R.id.btnKeep).setOnClickListener { keep() }

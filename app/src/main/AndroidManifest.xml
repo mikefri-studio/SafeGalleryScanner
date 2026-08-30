@@ -28,5 +28,6 @@
             </intent-filter>
         </activity>
         <activity android:name=".VaultActivity" android:exported="false" />
+        <activity android:name=".DetailActivity" android:exported="false" />
     </application>
 </manifest>

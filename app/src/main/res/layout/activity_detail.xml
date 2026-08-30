@@ -17,13 +17,23 @@
         android:textStyle="bold"
         android:text="Score NSFW : -" />
 
-    <ImageView
-        android:id="@+id/imgFull"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:scaleType="fitCenter"
-        android:contentDescription="Photo plein ecran" />
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/imgFull"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter"
+            android:contentDescription="Photo plein ecran" />
+
+        <com.mikefri.safegalleryscanner.BoxOverlayView
+            android:id="@+id/boxOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="match_parent"

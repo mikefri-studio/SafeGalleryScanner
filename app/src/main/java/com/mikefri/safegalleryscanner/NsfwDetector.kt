@@ -50,3 +50,16 @@ class SkinDetector : PhotoDetector {
         return skin.toFloat() / (w * h)
     }
 }
+fun applySystemInsets(activity: android.app.Activity) {
+    val root = activity.findViewById<android.view.View>(android.R.id.content)
+    androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+        val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+        insets
+    }
+    try {
+        val tv = android.util.TypedValue()
+        activity.theme.resolveAttribute(com.google.android.material.R.attr.colorPrimary, tv, true)
+        activity.window.statusBarColor = tv.data
+    } catch (e: Exception) { }
+}

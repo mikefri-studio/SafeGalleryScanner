@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingQuickVaultIndex = -1
     private var pendingMultiCopies = mutableListOf<File>()
     private var pendingMultiIndices = mutableListOf<Int>()
+    private var selectedBucket: String? = null
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -58,6 +59,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        applySystemInsets(this)
 
         tvStatus = findViewById(R.id.tvStatus)
         barSelection = findViewById(R.id.barSelection)
@@ -67,6 +69,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnVault).setOnClickListener { startActivity(Intent(this, VaultActivity::class.java)) }
         findViewById<Button>(R.id.btnCancelSel).setOnClickListener { exitSelectionMode() }
         findViewById<Button>(R.id.btnVaultMulti).setOnClickListener { vaultSelection() }
+        findViewById<Button>(R.id.btnFolders).setOnClickListener { showFolderPicker() }
 
         val recycler = findViewById<RecyclerView>(R.id.recyclerImages)
         recycler.layoutManager = GridLayoutManager(this, 3)
@@ -204,6 +207,45 @@ class MainActivity : AppCompatActivity() {
         updateStatus()
     }
 
+    private fun folderSuffix(): String =
+        if (selectedBucket != null) " | Dossier : $selectedBucket" else ""
+
+    private fun showFolderPicker() {
+        tvStatus.text = "Lecture des dossiers..."
+        Thread {
+            val counts = LinkedHashMap<String, Int>()
+            val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            contentResolver.query(
+                collection,
+                arrayOf(MediaStore.Images.Media.BUCKET_DISPLAY_NAME),
+                null, null, null
+            )?.use { cursor ->
+                val col = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+                while (cursor.moveToNext()) {
+                    val b = cursor.getString(col) ?: "?"
+                    counts[b] = (counts[b] ?: 0) + 1
+                }
+            }
+            val names = counts.keys.toList()
+            val display = mutableListOf("Tous les dossiers")
+            display.addAll(names.map { "$it (${counts[it]})" })
+
+            runOnUiThread {
+                val current = if (selectedBucket == null) 0 else (names.indexOf(selectedBucket) + 1).coerceAtLeast(0)
+                var checked = current
+                AlertDialog.Builder(this)
+                    .setTitle("Dossier a scanner")
+                    .setSingleChoiceItems(display.toTypedArray(), current) { _, which -> checked = which }
+                    .setPositiveButton("OK") { _, _ ->
+                        selectedBucket = if (checked == 0) null else names[checked - 1]
+                        loadPhotos()
+                    }
+                    .setNegativeButton("Annuler", null)
+                    .show()
+            }
+        }.start()
+    }
+
     private fun requiredPermissions(): Array<String> =
         if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
         else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
@@ -239,11 +281,21 @@ class MainActivity : AppCompatActivity() {
                 MediaStore.Images.Media.DATE_MODIFIED
             )
 
+            val sel: String?
+            val selArgs: Array<String>?
+            if (selectedBucket != null) {
+                sel = MediaStore.Images.Media.BUCKET_DISPLAY_NAME + " = ?"
+                selArgs = arrayOf(selectedBucket!!)
+            } else {
+                sel = null
+                selArgs = null
+            }
+
             contentResolver.query(
                 collection,
                 projection,
-                null,
-                null,
+                sel,
+                selArgs,
                 MediaStore.Images.Media.DATE_MODIFIED + " DESC"
             )?.use { cursor ->
                 val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
@@ -260,7 +312,7 @@ class MainActivity : AppCompatActivity() {
                 adapter.scores = FloatArray(0)
                 adapter.selected = emptySet()
                 adapter.notifyDataSetChanged()
-                tvStatus.text = "Photos : ${imageUris.size} | Appui long pour selection multiple"
+                tvStatus.text = "Photos : ${imageUris.size}" + folderSuffix() + " | Appui long = selection"
             }
         }.start()
     }
@@ -405,9 +457,9 @@ class MainActivity : AppCompatActivity() {
     private fun updateStatus() {
         val flagged = scores.count { it >= NSFW_THRESHOLD }
         if (scores.isEmpty()) {
-            tvStatus.text = "Photos : ${imageUris.size} | Appui long pour selection multiple"
+            tvStatus.text = "Photos : ${imageUris.size}" + folderSuffix() + " | Appui long = selection"
         } else {
-            tvStatus.text = "Photos : ${imageUris.size} | Suspectes : $flagged | modele : $modelInfo"
+            tvStatus.text = "Photos : ${imageUris.size}" + folderSuffix() + " | Suspectes : $flagged | modele : $modelInfo"
         }
     }
 

@@ -51,6 +51,16 @@
                 android:layout_marginStart="8dp"
                 android:text="Coffre-fort"
                 app:icon="@drawable/ic_lock" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFolders"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="Dossiers"
+                app:icon="@drawable/ic_folder" />
         </LinearLayout>
 
         <androidx.recyclerview.widget.RecyclerView

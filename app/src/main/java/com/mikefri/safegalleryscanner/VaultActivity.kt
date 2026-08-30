@@ -46,6 +46,7 @@ class VaultActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_vault)
+        applySystemInsets(this)
         prefs = getSharedPreferences("vault", MODE_PRIVATE)
         etPin = findViewById(R.id.etPin)
         etPin2 = findViewById(R.id.etPin2)
